@@ -7,15 +7,15 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-type UrlRepository struct {
+type URLRepository struct {
 	db *sqlx.DB
 }
 
-func NewUrlRepo(db *sqlx.DB) *UrlRepository {
-	return &UrlRepository{db: db}
+func NewUrlRepo(db *sqlx.DB) *URLRepository {
+	return &URLRepository{db: db}
 }
 
-func (r *UrlRepository) Create(ctx context.Context, u *domain.Url) error {
+func (r *URLRepository) Create(ctx context.Context, u *domain.Url) error {
 	query := `
 		INSERT INTO urls (long_url, code)
 		VALUES (:long_url, :code)
@@ -36,7 +36,7 @@ func (r *UrlRepository) Create(ctx context.Context, u *domain.Url) error {
 	return nil
 }
 
-func (r *UrlRepository) GetByCode(ctx context.Context, code string) (*domain.Url, error) {
+func (r *URLRepository) GetByCode(ctx context.Context, code string) (*domain.Url, error) {
 	var u domain.Url
 
 	query := `

@@ -8,37 +8,48 @@ import (
 	"url-shortener/internal/server"
 	"url-shortener/internal/service"
 
-	"github.com/labstack/gommon/log"
+	"github.com/go-playground/validator/v10"
+	"go.uber.org/zap"
 )
 
 func main() {
+	l, _ := zap.NewProduction()
+	defer func() {
+		_ = l.Sync()
+	}()
+
 	cfg, err := config.Get()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		l.Fatal("failed to load config", zap.Error(err))
 	}
 
-	database, err := db.OpenX(cfg.Db.Dsn())
+	pg, err := db.OpenX(cfg.Db.Dsn())
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		l.Fatal("failed to connect to database", zap.Error(err))
 	}
 
 	defer func() {
-		_ = database.Close()
+		_ = pg.Close()
 	}()
 
 	redisClient, err := db.NewRedis(cfg.Redis)
 	if err != nil {
-		log.Warnf("failed to init redis: %v", err)
-		return
+		l.Fatal("failed to connect to redis", zap.Error(err))
 	}
 
-	repos := repository.New(database)
-	services := service.New(repos, redisClient)
-	handlers := handler.New(services, cfg)
+	defer func() {
+		_ = redisClient.Close()
+	}()
 
-	s := server.NewServer(cfg, handlers)
-	s.Logger.Printf("Starting application in %s mode", cfg.App.Env)
-	s.Logger.Printf("Listening on port %s", cfg.Server.Port)
+	validate := validator.New()
+
+	urlRepo := repository.NewUrlRepo(pg)
+	urlService := service.NewURLService(urlRepo, redisClient, l)
+	homeHandler := handler.NewHomeHandler()
+	urlHandler := handler.NewURLHandler(urlService, cfg, validate)
+
+	s := server.NewServer(cfg, homeHandler, urlHandler, l)
+	l.Info("Listening on port", zap.String("port", cfg.Server.Port))
 
 	s.Run()
 }

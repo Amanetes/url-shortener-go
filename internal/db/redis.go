@@ -17,6 +17,7 @@ func NewRedis(cfg config.RedisConfig) (*redis.Client, error) {
 
 	// Проверяем соединение сразу
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		_ = rdb.Close()
 		return nil, fmt.Errorf("redis ping failed: %w", err)
 	}
 

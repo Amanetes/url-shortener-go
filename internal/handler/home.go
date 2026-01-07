@@ -13,7 +13,13 @@ type HomeResponse struct {
 	Time    string `json:"time"`
 }
 
-func (h *Handler) Home(c echo.Context) error {
+type HomeHandler struct{}
+
+func NewHomeHandler() *HomeHandler {
+	return &HomeHandler{}
+}
+
+func (h *HomeHandler) Home(c echo.Context) error {
 	r := HomeResponse{
 		Message: "URL Shortener API",
 		Version: "1.0.0",

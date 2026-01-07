@@ -3,7 +3,10 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"url-shortener/internal/config"
+	"url-shortener/internal/service"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
 )
 
@@ -16,18 +19,32 @@ type (
 		Code     string `json:"code"`
 		ShortUrl string `json:"short_url"`
 	}
+
+	URLHandler struct {
+		cfg     *config.Config
+		service service.URLServicer
+		v       *validator.Validate
+	}
 )
 
-func (h *Handler) Shorten(c echo.Context) error {
+func NewURLHandler(service service.URLServicer, cfg *config.Config, v *validator.Validate) *URLHandler {
+	return &URLHandler{
+		service: service,
+		cfg:     cfg,
+		v:       v,
+	}
+}
+
+func (h *URLHandler) Shorten(c echo.Context) error {
 	var req UrlRequest
 	if err := c.Bind(&req); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "invalid request body")
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
 	}
 
-	if err := c.Validate(&req); err != nil {
+	if err := h.v.Struct(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	u, err := h.UrlService.Create(c.Request().Context(), req.LongUrl)
+	u, err := h.service.Create(c.Request().Context(), req.LongUrl)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to shorten url")
 	}
@@ -45,13 +62,13 @@ func (h *Handler) Shorten(c echo.Context) error {
 	return c.JSON(http.StatusCreated, resp)
 }
 
-func (h *Handler) Redirect(c echo.Context) error {
+func (h *URLHandler) Redirect(c echo.Context) error {
 	code := c.Param("code")
 	if code == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "code is required")
 	}
 
-	u, err := h.UrlService.GetByCode(c.Request().Context(), code)
+	u, err := h.service.GetByCode(c.Request().Context(), code)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "url not found")
 	}

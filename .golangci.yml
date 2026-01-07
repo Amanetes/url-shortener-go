@@ -15,7 +15,6 @@ linters:
   enable:
     - cyclop
     - govet
-    - gocyclo
     - sqlclosecheck
     - noctx
     - modernize
@@ -23,6 +22,10 @@ linters:
     - gocognit
     - whitespace
     - gocritic
+    - nestif
+    - dupl
+    - funlen
+    - maintidx
   settings:
     cyclop:
       # The maximal code complexity to report.
@@ -35,7 +38,15 @@ linters:
     gocognit:
       # Minimal code complexity to report.
       # Default: 30 (but we recommend 10-20)
-      min-complexity: 20
+      min-complexity: 10
+    funlen:
+      lines: 55
+    nestif:
+      min-complexity: 3
+    dupl:
+      threshold: 50
+    maintidx:
+      under: 20
     gocritic:
       # Settings passed to gocritic.
       # The settings key is the name of a supported gocritic checker.

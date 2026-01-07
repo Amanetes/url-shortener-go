@@ -6,29 +6,33 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 	"url-shortener/internal/domain"
-	"url-shortener/internal/repository"
+	repositoryInterface "url-shortener/internal/repository/interface"
 
-	"github.com/labstack/gommon/log"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 const urlTTL = 10 * time.Minute
 
-type UrlService struct {
-	repo  *repository.UrlRepository
+type URLService struct {
+	repo  repositoryInterface.URLRepository
 	cache *redis.Client
+	l     *zap.Logger
 }
 
-func NewUrlService(repo *repository.UrlRepository, rdb *redis.Client) *UrlService {
-	return &UrlService{
-		repo:  repo,
-		cache: rdb,
+func NewURLService(repo repositoryInterface.URLRepository, cache *redis.Client, l *zap.Logger) *URLService {
+	return &URLService{repo, cache, l}
+}
+
+func (s *URLService) Create(ctx context.Context, longUrl string) (*domain.Url, error) {
+	if err := validateURL(longUrl); err != nil {
+		return nil, fmt.Errorf("invalid url: %w", err)
 	}
-}
 
-func (s *UrlService) Create(ctx context.Context, longUrl string) (*domain.Url, error) {
 	code, err := generateShortCode()
 
 	if err != nil {
@@ -41,7 +45,7 @@ func (s *UrlService) Create(ctx context.Context, longUrl string) (*domain.Url, e
 	}
 
 	if err = s.cache.Set(ctx, "url:"+u.Code, u.LongUrl, urlTTL).Err(); err != nil {
-		log.Errorf("failed to set url in cache: %v", err)
+		s.l.Error("failed to set url in cache", zap.Error(err))
 	}
 
 	// Передаем контекст дальше в репозиторий
@@ -61,7 +65,28 @@ func generateShortCode() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-func (s *UrlService) GetByCode(ctx context.Context, code string) (*domain.Url, error) {
+func validateURL(rawURL string) error {
+	if strings.TrimSpace(rawURL) == "" {
+		return errors.New("url cannot be empty")
+	}
+
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid url format: %w", err)
+	}
+
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return errors.New("url scheme must be http or https")
+	}
+
+	if parsedURL.Host == "" {
+		return errors.New("url must have a valid host")
+	}
+
+	return nil
+}
+
+func (s *URLService) GetByCode(ctx context.Context, code string) (*domain.Url, error) {
 	cacheKey := "url:" + code
 
 	val, err := s.cache.Get(ctx, cacheKey).Result()
@@ -76,7 +101,7 @@ func (s *UrlService) GetByCode(ctx context.Context, code string) (*domain.Url, e
 
 	// Редис лег - логируем
 	if !errors.Is(err, redis.Nil) {
-		log.Printf("redis error: %v", err)
+		s.l.Warn("failed to get url from cache", zap.Error(err))
 	}
 
 	u, err := s.repo.GetByCode(ctx, code)
@@ -86,7 +111,7 @@ func (s *UrlService) GetByCode(ctx context.Context, code string) (*domain.Url, e
 
 	// Нашли - кладем в кеш
 	if err = s.cache.Set(ctx, cacheKey, u.LongUrl, urlTTL).Err(); err != nil {
-		log.Printf("failed to set url in cache: %v", err)
+		s.l.Error("failed to set url in cache", zap.Error(err))
 	}
 
 	return u, nil
