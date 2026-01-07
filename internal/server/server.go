@@ -16,18 +16,23 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/labstack/gommon/log"
 	"github.com/ulule/limiter/v3"
 	"github.com/ulule/limiter/v3/drivers/store/memory"
+	"go.uber.org/zap"
 )
 
 type Server struct {
 	cfg *config.Config
 	*echo.Echo
-	*handler.Handler
+	l *zap.Logger
 }
 
-func NewServer(cfg *config.Config, h *handler.Handler) *Server {
+func NewServer(
+	cfg *config.Config,
+	homeHandler *handler.HomeHandler,
+	urlHandler *handler.URLHandler,
+	l *zap.Logger,
+) *Server {
 	e := echo.New()
 
 	if cfg.App.Env == "development" {
@@ -35,18 +40,46 @@ func NewServer(cfg *config.Config, h *handler.Handler) *Server {
 	}
 
 	// Middleware
-	e.Use(middleware.Logger())
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogURI:           true,
+		LogMethod:        true,
+		LogStatus:        true,
+		LogLatency:       true,
+		LogRemoteIP:      true,
+		LogUserAgent:     true,
+		LogContentLength: true,
+		LogResponseSize:  true,
+		LogError:         true,
+		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+			fields := []zap.Field{
+				zap.String("method", v.Method),
+				zap.String("uri", v.URI),
+				zap.Int("status", v.Status),
+				zap.Duration("latency", v.Latency),
+				zap.String("remote_ip", v.RemoteIP),
+				zap.String("user_agent", v.UserAgent),
+				zap.String("bytes_in", v.ContentLength),
+				zap.Int64("bytes_out", v.ResponseSize),
+			}
+
+			if v.Error != nil {
+				fields = append(fields, zap.String("error", v.Error.Error()))
+			}
+
+			l.Info("http_request", fields...)
+			return nil
+		},
+	}))
 	e.Use(middleware.Recover())
 
 	e.Pre(middleware.RemoveTrailingSlash())
 
-	e.Validator = handler.NewValidator()
-
-	router.SetupRoutes(e, h, IPRateLimiter())
+	router.SetupRoutes(e, homeHandler, urlHandler, IPRateLimiter(l))
 
 	return &Server{
 		cfg:  cfg,
 		Echo: e,
+		l:    l,
 	}
 }
 
@@ -58,22 +91,22 @@ func (s *Server) Run() {
 		addr := fmt.Sprintf(":%s", s.cfg.Server.Port)
 
 		if err := s.Start(addr); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.Logger.Fatal("Shutting down the server")
+			s.l.Fatal("Failed to start server", zap.Error(err))
 		}
 	}()
 
 	<-ctx.Done()
-	s.Logger.Printf("Shutting down server...")
+	s.l.Info("Shutting down server...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.Server.ShutdownGracePeriod)
 	defer cancel()
 
 	if err := s.Shutdown(shutdownCtx); err != nil {
-		s.Logger.Fatal(err)
+		s.l.Fatal("Failed to shutdown server gracefully", zap.Error(err))
 	}
 }
 
-func IPRateLimiter() echo.MiddlewareFunc {
+func IPRateLimiter(logger *zap.Logger) echo.MiddlewareFunc {
 	rate := limiter.Rate{
 		Period: 1 * time.Second,
 		Limit:  10,
@@ -89,7 +122,11 @@ func IPRateLimiter() echo.MiddlewareFunc {
 
 			limiterCtx, err := l.Get(c.Request().Context(), ip)
 			if err != nil {
-				log.Warnf("IPRateLimit - ipRateLimiter.Get - err: %v, %s on %s", err, ip, c.Request().URL)
+				logger.Warn("IPRateLimit - ipRateLimiter.Get error",
+					zap.Error(err),
+					zap.String("ip", ip),
+					zap.String("url", c.Request().URL.String()),
+				)
 				return c.JSON(http.StatusInternalServerError, echo.Map{
 					"success": false,
 					"message": err,
@@ -102,14 +139,17 @@ func IPRateLimiter() echo.MiddlewareFunc {
 			h.Set("X-RateLimit-Reset", strconv.FormatInt(limiterCtx.Reset, 10))
 
 			if limiterCtx.Reached {
-				log.Printf("Too Many Requests from %s on %s", ip, c.Request().URL)
+				logger.Info("Too Many Requests",
+					zap.String("ip", ip),
+					zap.String("url", c.Request().URL.String()),
+				)
 				return c.JSON(http.StatusTooManyRequests, echo.Map{
 					"success": false,
 					"message": "Too Many Requests on " + c.Request().URL.String(),
 				})
 			}
 
-			// log.Printf("%s request continue", c.RealIP())
+			// logger.Debug("request continue", zap.String("ip", c.RealIP()))
 			return next(c)
 		}
 	}

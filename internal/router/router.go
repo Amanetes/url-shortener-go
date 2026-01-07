@@ -7,18 +7,23 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func SetupRoutes(e *echo.Echo, h *handler.Handler, limiterMiddleware echo.MiddlewareFunc) {
+func SetupRoutes(
+	e *echo.Echo,
+	home *handler.HomeHandler,
+	url *handler.URLHandler,
+	limiterMiddleware echo.MiddlewareFunc,
+) {
 	// root
-	e.GET("/", h.Home, limiterMiddleware)
+	e.GET("/", home.Home, limiterMiddleware)
 
 	// health
 	e.GET("/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, echo.Map{"status": "ok"})
 	})
 
-	// urls
-	e.POST("/shorten", h.Shorten, limiterMiddleware)
-	e.GET("/:code", h.Redirect)
+	// URLs
+	e.POST("/shorten", url.Shorten, limiterMiddleware)
+	e.GET("/:code", url.Redirect)
 
 	e.RouteNotFound("/*", func(c echo.Context) error { return c.NoContent(http.StatusNotFound) })
 }

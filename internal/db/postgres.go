@@ -13,5 +13,9 @@ func OpenX(dsn string) (*sqlx.DB, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	db.SetMaxIdleConns(25)
+	db.SetMaxOpenConns(5)
+	db.SetConnMaxLifetime(5)
+
 	return db, nil
 }
