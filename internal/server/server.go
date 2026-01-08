@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 	"url-shortener/internal/config"
-	"url-shortener/internal/handler"
 	"url-shortener/internal/router"
 
 	"github.com/labstack/echo/v4"
@@ -29,8 +28,7 @@ type Server struct {
 
 func NewServer(
 	cfg *config.Config,
-	homeHandler *handler.HomeHandler,
-	urlHandler *handler.URLHandler,
+	routers []router.Router,
 	l *zap.Logger,
 ) *Server {
 	e := echo.New()
@@ -74,7 +72,11 @@ func NewServer(
 
 	e.Pre(middleware.RemoveTrailingSlash())
 
-	router.SetupRoutes(e, homeHandler, urlHandler, IPRateLimiter(l))
+	rateLimiter := IPRateLimiter(l)
+
+	for _, r := range routers {
+		r.RegisterRoutes(e, rateLimiter)
+	}
 
 	return &Server{
 		cfg:  cfg,

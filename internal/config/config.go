@@ -29,11 +29,15 @@ type ServerConfig struct {
 }
 
 type DbConfig struct {
-	Host     string `envconfig:"DB_HOST"`
-	Port     string `envconfig:"DB_PORT"`
-	User     string `envconfig:"DB_USER"`
-	Password string `envconfig:"DB_PASSWORD"`
-	DbName   string `envconfig:"DB_NAME"`
+	Host            string        `envconfig:"DB_HOST"`
+	Port            string        `envconfig:"DB_PORT"`
+	User            string        `envconfig:"DB_USER"`
+	Password        string        `envconfig:"DB_PASSWORD"`
+	DbName          string        `envconfig:"DB_NAME"`
+	MaxOpenConns    int           `envconfig:"DB_MAX_OPEN_CONNS"     default:"20"`
+	MaxIdleConns    int           `envconfig:"DB_MAX_IDLE_CONNS"     default:"10"`
+	ConnMaxLifetime time.Duration `envconfig:"DB_CONN_MAX_LIFETIME"  default:"60m"`
+	ConnMaxIdleTime time.Duration `envconfig:"DB_CONN_MAX_IDLE_TIME" default:"10m"`
 }
 
 type RedisConfig struct {
