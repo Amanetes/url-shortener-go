@@ -5,6 +5,7 @@ import (
 	"url-shortener/internal/db"
 	"url-shortener/internal/handler"
 	"url-shortener/internal/repository"
+	"url-shortener/internal/router"
 	"url-shortener/internal/server"
 	"url-shortener/internal/service"
 
@@ -23,7 +24,7 @@ func main() {
 		l.Fatal("failed to load config", zap.Error(err))
 	}
 
-	pg, err := db.OpenX(cfg.Db.Dsn())
+	pg, err := db.OpenX(cfg.Db)
 	if err != nil {
 		l.Fatal("failed to connect to database", zap.Error(err))
 	}
@@ -48,7 +49,12 @@ func main() {
 	homeHandler := handler.NewHomeHandler()
 	urlHandler := handler.NewURLHandler(urlService, cfg, validate)
 
-	s := server.NewServer(cfg, homeHandler, urlHandler, l)
+	routers := []router.Router{
+		router.NewHomeRouter(homeHandler),
+		router.NewURLRouter(urlHandler),
+	}
+
+	s := server.NewServer(cfg, routers, l)
 	l.Info("Listening on port", zap.String("port", cfg.Server.Port))
 
 	s.Run()
